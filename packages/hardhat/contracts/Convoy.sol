@@ -32,9 +32,9 @@ contract Convoy is ERC721, ERC721Enumerable {
   uint8 OFF_POSITION = 16;
   uint8 OFF_TYPE = 13;
   uint8 OFF_HP = 10;
-  uint8 OFF_RANGE = 8;
+  uint8 OFF_RANGE = 7;
   uint8 OFF_ATTACK = 4;
-  uint8 OFF_SPEED = 0;
+  uint8 OFF_SPEED = 1;
 
   mapping(uint256 => Match) public matches;
   uint256[] public joinables;
@@ -69,6 +69,30 @@ contract Convoy is ERC721, ERC721Enumerable {
   function getMatch(uint256 matchId) public view returns (Match memory) {
     require(matchId < counter, "Match too big");
     return matches[matchId];
+  }
+
+  // return your (defender or invader) newest 10 active (not round=4) matches 
+  function yourNewestActiveMatches(address you) public view returns (uint256[] memory) {
+    require(counter > 0, "Not a single match");
+    uint256 count;
+    uint256[] memory yourMatches = new uint256[](10);
+    for (uint256 i = counter; i > 0 && count < 10; i--) {
+      Match memory m = matches[i - 1]; // i-1 so i must be > 0, do not let 0--
+      console.log(msg.sender);
+      console.log(m.defender);
+      console.log(m.invader);
+      if (m.defender == you || m.invader == you) {
+        if (m.round < 4) {
+          yourMatches[count++] = i - 1;
+        }
+      }
+    }
+    // filters empty slots from yourMatches
+    uint256[] memory filtered = new uint256[](count);
+    for (uint256 i; i < count; i++) {
+      filtered[i] = yourMatches[i];
+    }
+    return filtered;
   }
   
   function _test1round(uint256 matchId) public {
@@ -120,6 +144,7 @@ contract Convoy is ERC721, ERC721Enumerable {
     // Can only reveal after both sides committed, can commit until both committed and one revealed
     require(!matches[matchId].defenderRevealed, "Defender already revealed");
     require(!matches[matchId].invaderRevealed, "Invader already revealed");
+    // allows committing before someone has even joined
 
     if (asDefender) {
       matches[matchId].defenseHash = hash;
@@ -162,7 +187,7 @@ contract Convoy is ERC721, ERC721Enumerable {
     }
   }
 
-  // position should be max 4 bits to fit up to 32 troops in defenseReverse. There is no uint4 so uint8.
+  // position should be max 4 bits to fit up to 16 troops in defenseReverse. There is no uint4 so uint8.
   function posit(uint32 troop) public view returns (uint8) {
     return uint8(troop >> OFF_POSITION);
   }
