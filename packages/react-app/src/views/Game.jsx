@@ -114,6 +114,9 @@ let tankx = 0, tanky = 0, turr1x = 0, turr1y = 0;
   );
 }
 
+
+
+
 function Joinables({
   address,
   mainnetProvider,
@@ -149,17 +152,31 @@ function InitMatch({
 
 }
 
+const MAX_ARMY = 5; // uint256, bytes32 can support up to 8 x 32bit troops
+const OFF_POSITION = 16;
+const OFF_TYPE = 13;
+const OFF_HP = 10;
+const OFF_RANGE = 8;
+const OFF_ATTACK = 4;
+const OFF_SPEED = 0;
+const jav = {'hp': 2, 'range': 2, 'attack': 1};
+const stats = {1: jav, 2: {/* TODO */}};
+// const typeMap = {'Javelin': 0x01, 'RPG': 0x02};
 function Match({
   match,
   address,
+  tx,
   mainnetProvider,
   readContracts,
   writeContracts,
 }) {
   const [matchId, setMatchId] = useState();
-  const [defenseHash, setDefenseHash] = useState();
-  const [slider1, setSlider1] = useState(1);
-  const [slider2, setSlider2] = useState(2);
+  const [defenseAry, setDefenseAry] = useState([]);
+  const [defenseHashContract, setDefenseHashContract] = useState();
+  const [defenseHashComputed, setDefenseHashComputed] = useState();
+  const [round, setRound] = useState(0);
+  const [defenseTypes, setDefenseTypes] = useState(Array(MAX_ARMY).fill(1));
+  const [defensePos, setDefensePos] = useState([]);
   console.log(match);
   if (!match) return '';
 
@@ -167,11 +184,53 @@ function Match({
     setMatchId(match.matchId.toNumber());
     console.log('set new matchId ', matchId);
   }
-  if (defenseHash != match.defenseHash) {
-    setDefenseHash(match.defenseHash);
-    console.log('set new defenseHash ', match.defenseHash);
+  if (defenseHashContract != match.defenseHash) {
+    setDefenseHashContract(match.defenseHash);
+    console.log('update defenseHashContract ', match.defenseHash);
   }
-  console.log(utils.keccak256([0,1,2,3]));
+  if (round != match.round) {
+    if (round != match.round - 1) {
+      console.log("SKIPPED ROUND?");
+    }
+    setRound(match.round);
+
+    // hashes and revealed (but not actual defense/invasion) should be cleared now too. 
+    // TODO round finished so render what is saved in match.defense/invasion
+  }
+  function makeBytes32like(ary) {
+    return '0x' + ary.map(n => n.toString(16).padStart(8, '0')).join('');
+  }
+  function recalcDefenseHash() {
+    const makeDefenseTroop = (pos, type, hp, range, attack) => (pos << OFF_POSITION) + (type << OFF_TYPE) + (hp << OFF_HP) + (range << OFF_RANGE) + (attack << OFF_ATTACK);
+    let defense = [];
+    for (let i = 0; i < defenseTypes.length; i++) {
+      let typ = defenseTypes[i];
+      defense.push(makeDefenseTroop(defensePos[i], typ, stats[typ].hp, stats[typ].range, stats[typ].attack));
+    }
+    console.log(defense);
+     console.log(  utils.keccak256("0x2A10"));
+     console.log(  utils.keccak256("0x00002A1000002A10"));
+    let newHash = utils.keccak256(makeBytes32like(defense));
+    console.log("defense and calc of defense", defense, newHash);
+    setDefenseAry(defense);
+    setDefenseHashComputed(newHash);
+  }
+  function changeDefenseType(troopIdx, val) {
+    const newDefenseTypes = [...defenseTypes];
+    newDefenseTypes[troopIdx] = val;
+    setDefenseTypes(newDefenseTypes);
+  }
+  function changeDefenseSlider(troopIdx, pos) {
+    // check that pos do not overlap
+    if (defensePos.indexOf(pos) !== -1) {
+      return;
+    }
+    
+    const newDefense = [...defensePos];
+    newDefense[troopIdx] = pos;
+    setDefensePos(newDefense);
+    recalcDefenseHash();
+  }
   /*
   struct Match {
     uint256 matchId; // not necessary, for debugging
@@ -193,6 +252,7 @@ function Match({
   [BigNumber, '0xA36A02F8ee21490181499778467c07BE65f63620', '0x0000000000000000000000000000000000000000', Array(5), Array(5), '0x0000000000000000000000000000000000000000000000000000000000000000', '0x0000000000000000000000000000000000000000000000000000000000000000', BigNumber, 0, 0, false, false, false, matchId: BigNumber, defender: '0xA36A02F8ee21490181499778467c07BE65f63620', invader: '0x0000000000000000000000000000000000000000', defense: Array(5), invasion: Array(5), …]
   */
 
+
   return (
     <div>
       <h2>Match {match.matchId.toNumber()}</h2>
@@ -213,57 +273,44 @@ function Match({
       </div>
       <div>invader score: {match.pointsInvader}</div>
       <div>{match.defenderRevealed || match.invaderRevealed ? 'waiting for reveals' : 'ready to (re)commit'}</div>
-      <div>defender hash: {defenseHash == 0 ? '...waiting to commit' : defenseHash}</div>
+      <div>defender hash from contract: {defenseHashContract == 0 ? '...waiting to commit' : defenseHashContract}</div>
+      <div>defender hash strat computed: {defenseHashComputed == 0 ? '...' : defenseHashComputed}</div>
+      <div><span style={{color:'green'}}>{defenseHashContract == defenseHashComputed ? 'match' : ''}</span></div>
+      <div>from [ {defenseAry.map(n => '0x' + n.toString(16)).join([', '])} ]</div>
 
-      <Row>
-        <Col span={6}>
-          <Select defaultValue="Javelin">
-            <Option value="Javelin">Javelin</Option>
-            <Option value="Option2">Option2</Option>
-          </Select>
-        </Col>
-        <Col span={12}>
-          <Slider
-            min={1}
-            max={16}
-            onChange={setSlider1}
-            value={slider1}
-          />
-        </Col>
-        <Col span={4}>
-          <InputNumber
-            min={1}
-            max={16}
-            style={{ margin: '0 16px' }}
-            value={slider1}
-          />
-        </Col>
-      </Row>
-      <Row>
-        <Col span={6}>
-          <Select defaultValue="Javelin">
-            <Option value="Javelin">Javelin</Option>
-            <Option value="Option2">Option2</Option>
-          </Select>
-        </Col>
-        <Col span={12}>
-          <Slider
-            min={1}
-            max={16}
-            onChange={setSlider2}
-            value={slider2}
-          />
-        </Col>
-        <Col span={4}>
-          <InputNumber
-            min={1}
-            max={16}
-            style={{ margin: '0 16px' }}
-            value={slider2}
-          />
-        </Col>
-      </Row>
-      <Button> Commit Strategy to Blockchain </Button>
+      {[0, 1, 2, 3, 4].map(n => { return (
+        <Row>
+          <Col span={6}>
+            <Select defaultValue="1" onChange={(v) => changeDefenseType(n, v)}>
+              <Option value="1">Javelin</Option>
+              <Option value="2">RPG TODO</Option>
+            </Select>
+          </Col>
+          <Col span={12}>
+            <Slider
+              min={1}
+              max={16}
+              onChange={(pos) => changeDefenseSlider(n, pos)}
+              value={defensePos[n]}
+            />
+          </Col>
+          <Col span={4}>
+            <InputNumber
+              min={1}
+              max={16}
+              style={{ margin: '0 16px' }}
+              value={defensePos[n]}
+            />
+          </Col>
+        </Row>
+      )})}
+      <div style={{ margin: 8 }}>
+        <Button
+          onClick={() => {
+            tx(writeContracts.Convoy.commit(matchId, true, defenseHashComputed));
+          }}
+        > Commit Defense Strategy to Blockchain </Button>
+      </div>
     </div>
   );
 }
@@ -303,6 +350,7 @@ export default function Game({
         />
         <Match
           match={match}
+          tx={tx}
           readContracts={readContracts}
           address={address}
           mainnetProvider={mainnetProvider}
