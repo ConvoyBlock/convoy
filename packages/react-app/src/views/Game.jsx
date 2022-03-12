@@ -1,4 +1,4 @@
-import { Row, Col, Button, Card, DatePicker, Divider, Input, InputNumber, List, Progress, Select, Slider, Spin, Switch } from "antd";
+import { Row, Col, Button, Card, Collapse, DatePicker, Divider, Input, InputNumber, List, Progress, Select, Slider, Spin, Switch } from "antd";
 import React, { useState, useEffect } from "react";
 import { utils } from "ethers";
 import { SyncOutlined } from "@ant-design/icons";
@@ -15,6 +15,7 @@ import {
 } from "eth-hooks";
 
 const { Option } = Select;
+const { Panel } = Collapse;
 
 function renderRound(matchState) {
   // round is incremented, render what just happened in the prev round
@@ -182,7 +183,7 @@ function InitMatch({
 
   return (
       <div style={{ margin: 8 }}>
-        <Button
+        <Button type='primary' 
           onClick={() => {
             tx(writeContracts.Convoy.initMatch());
           }}
@@ -193,7 +194,7 @@ function InitMatch({
 }
 
 const MAX_ARMY = 5; // uint256, bytes32 can support up to 8 x 32bit troops
-const OFF_POSITION = 16;
+const OFF_POSITION = 16; // 5 bits but defense must be > 16, invader must start < 16
 const OFF_TYPE = 13;
 const OFF_HP = 10;
 const OFF_RANGE = 7;
@@ -202,11 +203,13 @@ const OFF_SPEED = 1;
 const TYP_JAV = 1;
 const TYP_RPG = 2;
 const TYP_TANK = 3;
+const TYP_BUS = 4;
 const jav = {'hp': 2, 'range': 2, 'attack': 1};
-const stats = {2: {/* TODO */}};
-stats[TYP_JAV] = jav;
-const invstats = {};
-invstats[TYP_TANK] = { 'hp': 2, 'range': 1, 'attack': 2 };
+const defStats = {2: {/* TODO */}};
+defStats[TYP_JAV] = jav;
+const invStats = {};
+invStats[TYP_TANK] = { 'hp': 2, 'range': 1, 'attack': 2 };
+invStats[TYP_BUS] = { 'hp': 1, 'range': 1, 'attack': 1 };
 // const typeMap = {'Javelin': 0x01, 'RPG': 0x02};
 function Match({
   matchId,
@@ -227,6 +230,9 @@ function Match({
     console.log(_match);
     setMatch(_match);
   }, [matchId]);
+  useEffect(async () => {
+    recalcInvasionHash();
+  }, []);
   const [defenseAry, setDefenseAry] = useState([]);
   const [defenseHashContract, setDefenseHashContract] = useState();
   const [defenseHashComputed, setDefenseHashComputed] = useState();
@@ -236,7 +242,7 @@ function Match({
   const [invasionHashContract, setInvasionHashContract] = useState();
   const [invasionHashComputed, setInvasionHashComputed] = useState();
   const [invasionTypes, setInvasionTypes] = useState(Array(MAX_ARMY).fill(TYP_TANK));
-  const [invasionPos, setInvasionPos] = useState([]);
+  const [invasionPos, setInvasionPos] = useState([0x0F, 0x0E, 0x0D, 0x0C, 0x0B]);
   const [round, setRound] = useState(0);
   if (!match) return '';
   console.log(match);
@@ -278,7 +284,7 @@ function Match({
     let defense = [];
     for (let i = 0; i < defenseTypes.length; i++) {
       let typ = defenseTypes[i];
-      defense.push(makeDefenseTroop(defensePos[i], typ, stats[typ].hp, stats[typ].range, stats[typ].attack));
+      defense.push(makeDefenseTroop(defensePos[i], typ, defStats[typ].hp, defStats[typ].range, defStats[typ].attack));
     }
     console.log(defense);
     let newHash = utils.keccak256(makeBytes32like(defense));
@@ -290,7 +296,7 @@ function Match({
     let invasion = [];
     for (let i = 0; i < invasionTypes.length; i++) {
       let typ = invasionTypes[i];
-      invasion.push(makeInvasionTroop(invasionPos[i], typ, stats[typ].hp, stats[typ].range, stats[typ].attack));
+      invasion.push(makeInvasionTroop(invasionPos[i], typ, invStats[typ].hp, invStats[typ].range, invStats[typ].attack));
     }
     console.log(invasion);
     let newHash = utils.keccak256(makeBytes32like(invasion));
@@ -302,6 +308,7 @@ function Match({
     const newDefenseTypes = [...defenseTypes];
     newDefenseTypes[troopIdx] = val;
     setDefenseTypes(newDefenseTypes);
+    recalcDefenseHash();
   }
   function changeInvasionType(troopIdx, val) {
     const newInvasionTypes = [...defenseTypes];
@@ -367,7 +374,7 @@ function Match({
       <div>from [ {defenseAry.map(n => '0x' + n.toString(16)).join([', '])} ]</div>
 
       {[0, 1, 2, 3, MAX_ARMY-1].map(n => { return (
-        <Row>
+        <Row key={'defender-' + n}>
           <Col span={6}>
             <Select defaultValue="1" onChange={(v) => changeDefenseType(n, v)}>
               <Option value="1">Javelin</Option>
@@ -375,22 +382,22 @@ function Match({
             </Select>
           </Col>
           <Col span={12}>
-            <Slider min={1} max={16} onChange={(pos) => changeDefenseSlider(n, pos)} value={defensePos[n]} />
+            <Slider min={16} max={31} onChange={(pos) => changeDefenseSlider(n, pos)} value={defensePos[n]} />
           </Col>
           <Col span={4}>
-            <InputNumber min={1} max={16} style={{ margin: '0 16px' }} value={defensePos[n]} />
+            <InputNumber min={16} max={31} style={{ margin: '0 16px' }} value={defensePos[n]} />
           </Col>
         </Row>
       )})}
       <div style={{ margin: 8 }}>
-        <Button
+        <Button type='primary'
           onClick={() => {
             tx(writeContracts.Convoy.commit(matchId, true, defenseHashComputed));
           }}
         > Commit Defense Strategy (Hashed) to Blockchain </Button>
       </div>
       <div style={{ margin: 8 }}>
-        <Button
+        <Button type='primary'
           onClick={() => {
             tx(writeContracts.Convoy.reveal(matchId, true, defenseAry));
           }}
@@ -399,15 +406,21 @@ function Match({
 
       <h1>Invasion</h1>
 
+      <Row >
       {[0, 1, 2, 3, MAX_ARMY-1].map(n => { return (
-        <Row>
-          <Col span={6}>
-            <Select defaultValue={TYP_TANK} onChange={(v) => changeDefenseType(n, v)}>
-              <Option value={TYP_TANK}>Tank1</Option>
-            </Select>
-          </Col>
-        </Row>
+        <Col key={'invader-' + n} span={4}>
+          <Select defaultValue={TYP_TANK} onChange={(v) => changeDefenseType(n, v)}>
+            <Option value={TYP_TANK}>Tank</Option>
+            <Option value={TYP_BUS}>Personnel Carrier</Option>
+          </Select>
+        </Col>
       )})}
+      </Row>
+      <div>{match.defenderRevealed || match.invaderRevealed ? 'waiting for reveals' : 'ready to (re)commit'}</div>
+      <div>invader hash from contract: {invasionHashContract == 0 ? '...waiting to commit' : invasionHashContract}</div>
+      <div>invader hash strat computed: {invasionHashComputed == 0 ? '...' : invasionHashComputed}</div>
+      <div><span style={{color:'green'}}>{invasionHashContract == invasionHashComputed ? 'match' : ''}</span></div>
+      <div>from [ {invasionAry.map(n => '0x' + n.toString(16)).join([', '])} ]</div>
     </div>
   );
 }
@@ -434,25 +447,34 @@ export default function Game({
         ⚙️ Here is an example UI that displays and sets the purpose in your smart contract:
       */}
       <div style={{ border: "1px solid #cccccc", padding: 16, width: 800, margin: "auto", marginTop: 64 }}>
-        <h2>Game UI:</h2>
+        <h2>Convoy Game UI:</h2>
 
-        <Joinables readContracts={readContracts}
-          tx={tx}
-          writeContracts={writeContracts}
-          mainnetProvider={mainnetProvider}
-        />
-        <YourActiveMatches readContracts={readContracts}
-          changeMatchId={setMatchId}
-          tx={tx}
-          address={address}
-          writeContracts={writeContracts}
-          mainnetProvider={mainnetProvider}
-        />
         <InitMatch readContracts={readContracts}
           tx={tx}
           mainnetProvider={mainnetProvider}
           writeContracts={writeContracts}
         />
+        <Collapse defaultActiveKey={['1']} >
+          <Panel header="Joinable Matches" key="1">
+            <Joinables readContracts={readContracts}
+              tx={tx}
+              writeContracts={writeContracts}
+              mainnetProvider={mainnetProvider}
+            />
+          </Panel>
+        </Collapse>
+        <Collapse defaultActiveKey={['1']} >
+          <Panel header="Your Matches" key="2">
+            <YourActiveMatches readContracts={readContracts}
+              changeMatchId={setMatchId}
+              tx={tx}
+              address={address}
+              writeContracts={writeContracts}
+              mainnetProvider={mainnetProvider}
+            />
+          </Panel>
+        </Collapse>
+        <Divider />
     <h1> Game Match {matchId} </h1>
         {readContracts ? 
           <Match
@@ -467,197 +489,38 @@ export default function Game({
         <canvas id="myCanvas" width="480" height="320" style={{border:'1px solid black'}}></canvas>
         {_ctx ? <Board canvas={_canvas} ctx={_ctx} /> : ''}
 
-        <h4>purpose: {purpose}</h4>
-        <Divider />
-        <div style={{ margin: 8 }}>
-          <Input
-            onChange={e => {
-              setNewPurpose(e.target.value);
-            }}
-          />
-          <Button
-            style={{ marginTop: 8 }}
-            onClick={async () => {
-              /* look how you call setPurpose on your contract: */
-              /* notice how you pass a call back for tx updates too */
-              const result = tx(writeContracts.YourContract.setPurpose(newPurpose), update => {
-                console.log("📡 Transaction Update:", update);
-                if (update && (update.status === "confirmed" || update.status === 1)) {
-                  console.log(" 🍾 Transaction " + update.hash + " finished!");
-                  console.log(
-                    " ⛽️ " +
-                      update.gasUsed +
-                      "/" +
-                      (update.gasLimit || update.gas) +
-                      " @ " +
-                      parseFloat(update.gasPrice) / 1000000000 +
-                      " gwei",
-                  );
-                }
-              });
-              console.log("awaiting metamask/web3 confirm result...", result);
-              console.log(await result);
-            }}
-          >
-            Set Purpose!
-          </Button>
-        </div>
-        <Divider />
-        Your Address:
-        <Address address={address} ensProvider={mainnetProvider} fontSize={16} />
-        <Divider />
-        ENS Address Example:
-        <Address
-          address="0x34aA3F359A9D614239015126635CE7732c18fDF3" /* this will show as austingriffith.eth */
-          ensProvider={mainnetProvider}
-          fontSize={16}
-        />
-        <Divider />
-        {/* use utils.formatEther to display a BigNumber: */}
-        <h2>Your Balance: {yourLocalBalance ? utils.formatEther(yourLocalBalance) : "..."}</h2>
-        <div>OR</div>
-        <Balance address={address} provider={localProvider} price={price} />
-        <Divider />
-        <div>🐳 Example Whale Balance:</div>
-        <Balance balance={utils.parseEther("1000")} provider={localProvider} price={price} />
-        <Divider />
-        {/* use utils.formatEther to display a BigNumber: */}
-        <h2>Your Balance: {yourLocalBalance ? utils.formatEther(yourLocalBalance) : "..."}</h2>
-        <Divider />
-        Your Contract Address:
-        <Address
-          address={readContracts && readContracts.YourContract ? readContracts.YourContract.address : null}
-          ensProvider={mainnetProvider}
-          fontSize={16}
-        />
-        <Divider />
-        <div style={{ margin: 8 }}>
-          <Button
-            onClick={() => {
-              /* look how you call setPurpose on your contract: */
-              tx(writeContracts.YourContract.setPurpose("🍻 Cheers"));
-            }}
-          >
-            Set Purpose to &quot;🍻 Cheers&quot;
-          </Button>
-        </div>
-        <div style={{ margin: 8 }}>
-          <Button
-            onClick={() => {
-              /*
-              you can also just craft a transaction and send it to the tx() transactor
-              here we are sending value straight to the contract's address:
-            */
-              tx({
-                to: writeContracts.YourContract.address,
-                value: utils.parseEther("0.001"),
-              });
-              /* this should throw an error about "no fallback nor receive function" until you add it */
-            }}
-          >
-            Send Value
-          </Button>
-        </div>
-        <div style={{ margin: 8 }}>
-          <Button
-            onClick={() => {
-              /* look how we call setPurpose AND send some value along */
-              tx(
-                writeContracts.YourContract.setPurpose("💵 Paying for this one!", {
-                  value: utils.parseEther("0.001"),
-                }),
-              );
-              /* this will fail until you make the setPurpose function payable */
-            }}
-          >
-            Set Purpose With Value
-          </Button>
-        </div>
-        <div style={{ margin: 8 }}>
-          <Button
-            onClick={() => {
-              /* you can also just craft a transaction and send it to the tx() transactor */
-              tx({
-                to: writeContracts.YourContract.address,
-                value: utils.parseEther("0.001"),
-                data: writeContracts.YourContract.interface.encodeFunctionData("setPurpose(string)", [
-                  "🤓 Whoa so 1337!",
-                ]),
-              });
-              /* this should throw an error about "no fallback nor receive function" until you add it */
-            }}
-          >
-            Another Example
-          </Button>
-        </div>
       </div>
 
       {/*
         📑 Maybe display a list of events?
           (uncomment the event and emit line in YourContract.sol! )
+  event MatchMinted(uint256 indexed matchId);
+  event MatchJoined(uint256 indexed matchId, address opponent);
+  event Committed(uint256 indexed matchId, bool asDefender);
+  event Revealed(uint256 indexed matchId, bool asDefender);
+  event InvadersDestroyed(uint256 indexed matchId, uint8 count);
+  event DefendersDestroyed(uint256 indexed matchId, uint8 count);
+          
       */}
-      <Events
-        contracts={readContracts}
-        contractName="YourContract"
-        eventName="SetPurpose"
-        localProvider={localProvider}
-        mainnetProvider={mainnetProvider}
-        startBlock={1}
-      />
-
-      <div style={{ width: 600, margin: "auto", marginTop: 32, paddingBottom: 256 }}>
-        <Card>
-          Check out all the{" "}
-          <a
-            href="https://github.com/austintgriffith/scaffold-eth/tree/master/packages/react-app/src/components"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            📦 components
-          </a>
-        </Card>
-
-        <Card style={{ marginTop: 32 }}>
-          <div>
-            There are tons of generic components included from{" "}
-            <a href="https://ant.design/components/overview/" target="_blank" rel="noopener noreferrer">
-              🐜 ant.design
-            </a>{" "}
-            too!
-          </div>
-
-          <div style={{ marginTop: 8 }}>
-            <Button type="primary">Buttons</Button>
-          </div>
-
-          <div style={{ marginTop: 8 }}>
-            <SyncOutlined spin /> Icons
-          </div>
-
-          <div style={{ marginTop: 8 }}>
-            Date Pickers?
-            <div style={{ marginTop: 2 }}>
-              <DatePicker onChange={() => {}} />
-            </div>
-          </div>
-
-          <div style={{ marginTop: 32 }}>
-            <Slider range defaultValue={[20, 50]} onChange={() => {}} />
-          </div>
-
-          <div style={{ marginTop: 32 }}>
-            <Switch defaultChecked onChange={() => {}} />
-          </div>
-
-          <div style={{ marginTop: 32 }}>
-            <Progress percent={50} status="active" />
-          </div>
-
-          <div style={{ marginTop: 32 }}>
-            <Spin />
-          </div>
-        </Card>
+      <div>
+        <Events
+          contracts={readContracts}
+          contractName="Convoy"
+          eventName="MatchMinted"
+          localProvider={localProvider}
+          mainnetProvider={mainnetProvider}
+          startBlock={1}
+        />
+        <Events
+          contracts={readContracts}
+          contractName="Convoy"
+          eventName="MatchJoined"
+          localProvider={localProvider}
+          mainnetProvider={mainnetProvider}
+          startBlock={1}
+        />
       </div>
+
     </div>
   );
 }
