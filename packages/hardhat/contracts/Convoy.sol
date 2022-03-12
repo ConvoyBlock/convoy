@@ -87,7 +87,7 @@ contract Convoy is ERC721, ERC721Enumerable {
         }
       }
     }
-    // filters empty slots from yourMatches
+    // filters empty slots from yourMatches, prevents returning invalid 0s
     uint256[] memory filtered = new uint256[](count);
     for (uint256 i; i < count; i++) {
       filtered[i] = yourMatches[i];
@@ -187,12 +187,13 @@ contract Convoy is ERC721, ERC721Enumerable {
     }
   }
 
-  // position should be max 4 bits to fit up to 16 troops in defenseReverse. There is no uint4 so uint8.
+  // position should be max 5 bits to fit up to 16 troops in defenseReverse where defense > 16.
+ //  There is no uint4 so uint8.
   function posit(uint32 troop) public view returns (uint8) {
     return uint8(troop >> OFF_POSITION);
   }
   function setPos(uint32 troop, uint8 pos) public returns (uint32) {
-    return troop | ((0x0F & pos) << OFF_POSITION);
+    return troop | ((0x1F & pos) << OFF_POSITION);
   }
   function attrib(uint32 troop, uint8 offset) public view returns (uint8) {
     // 0b111 = 0x07
