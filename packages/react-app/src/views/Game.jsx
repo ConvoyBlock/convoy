@@ -116,39 +116,79 @@ let tankx = 0, tanky = 0, turr1x = 0, turr1y = 0;
 
 
 
-
-function Joinables({
+function YourActiveMatches({
+  changeMatchId,
+  tx,
   address,
   mainnetProvider,
   readContracts,
+  writeContracts,
+}) {
+  const yours = useContractReader(readContracts, "Convoy", "yourNewestActiveMatches", [address]);
+  console.log(yours);
+  const requestChangeMatchId = (matchId) => {
+    // set global matchId to this
+    changeMatchId(matchId);
+    console.log('play ', matchId);
+  };
+  return (
+    <div>
+      <h2>Your Active Matches ({yours ? yours.length : '...'})</h2>
+      <List dataSource={yours} renderItem={item => (
+        <List.Item actions={[<a key="join" onClick={(e) => requestChangeMatchId(item.toNumber(), e)} >play</a>]} >
+          <div>matchId: <span>{item.toString()}</span></div>
+          <div><a>get details</a></div>
+        </List.Item>
+      )} />
+    </div>
+  );
+}
+
+
+function Joinables({
+  tx,
+  mainnetProvider,
+  readContracts,
+  writeContracts,
 }) {
   const joinables = useContractReader(readContracts, "Convoy", "joinlist");
   console.log(joinables);
   if (!joinables) {
     return '';
   }
-  const requestJoin = (matchId, e) => {
+  const requestJoin = (matchId) => {
+    tx(writeContracts.Convoy.joinMatch(matchId, false));
     console.log('join ', matchId);
-    console.log(e);
   };
   return (
-    <List dataSource={joinables} renderItem={item => (
-      <List.Item actions={[<a key="join" onClick={(e) => requestJoin(item.toNumber(), e)} >join</a>]} >
-        <div>matchId: <span>{item.toString()}</span></div>
-        <div><a>get details</a></div>
-      </List.Item>
-    )} />
+    <div>
+      <h2>Joinable Matches ({joinables.length})</h2>
+      <List dataSource={joinables} renderItem={item => (
+        <List.Item actions={[<a key="join" onClick={(e) => requestJoin(item.toNumber(), e)} >join</a>]} >
+          <div>matchId: <span>{item.toString()}</span></div>
+          <div><a>get details</a></div>
+        </List.Item>
+      )} />
+    </div>
   );
 }
 
 function InitMatch({
-  address,
+  tx,
   mainnetProvider,
   readContracts,
   writeContracts,
 }) {
 
-  return (<div><Button>Start a new match</Button></div>);
+  return (
+      <div style={{ margin: 8 }}>
+        <Button
+          onClick={() => {
+            tx(writeContracts.Convoy.initMatch());
+          }}
+        > Start a new match as defender </Button>
+      </div>
+  );
 
 }
 
@@ -156,37 +196,64 @@ const MAX_ARMY = 5; // uint256, bytes32 can support up to 8 x 32bit troops
 const OFF_POSITION = 16;
 const OFF_TYPE = 13;
 const OFF_HP = 10;
-const OFF_RANGE = 8;
+const OFF_RANGE = 7;
 const OFF_ATTACK = 4;
-const OFF_SPEED = 0;
+const OFF_SPEED = 1;
+const TYP_JAV = 1;
+const TYP_RPG = 2;
+const TYP_TANK = 3;
 const jav = {'hp': 2, 'range': 2, 'attack': 1};
-const stats = {1: jav, 2: {/* TODO */}};
+const stats = {2: {/* TODO */}};
+stats[TYP_JAV] = jav;
+const invstats = {};
+invstats[TYP_TANK] = { 'hp': 2, 'range': 1, 'attack': 2 };
 // const typeMap = {'Javelin': 0x01, 'RPG': 0x02};
 function Match({
-  match,
+  matchId,
   address,
   tx,
   mainnetProvider,
   readContracts,
   writeContracts,
 }) {
-  const [matchId, setMatchId] = useState();
+  //const match = useContractReader(readContracts, "Convoy", "getMatch", [matchId]);
+  const [match, setMatch] = useState();
+  useEffect(async () => {
+    console.log(readContracts);
+    if (!readContracts || readContracts.Convoy == undefined) return;
+    //match = useContractReader(readContracts, "Convoy", "getMatch", [matchId]);
+    //let _match = tx(readContracts.Convoy.getMatch(matchId));
+    let _match = await readContracts.Convoy.getMatch(matchId);
+    console.log(_match);
+    setMatch(_match);
+  }, [matchId]);
   const [defenseAry, setDefenseAry] = useState([]);
   const [defenseHashContract, setDefenseHashContract] = useState();
   const [defenseHashComputed, setDefenseHashComputed] = useState();
+  const [defenseTypes, setDefenseTypes] = useState(Array(MAX_ARMY).fill(TYP_JAV));
+  const [defensePos, setDefensePos] = useState([]); // TODO init with MAX_POS=0x100
+  const [invasionAry, setInvasionAry] = useState([]);
+  const [invasionHashContract, setInvasionHashContract] = useState();
+  const [invasionHashComputed, setInvasionHashComputed] = useState();
+  const [invasionTypes, setInvasionTypes] = useState(Array(MAX_ARMY).fill(TYP_TANK));
+  const [invasionPos, setInvasionPos] = useState([]);
   const [round, setRound] = useState(0);
-  const [defenseTypes, setDefenseTypes] = useState(Array(MAX_ARMY).fill(1));
-  const [defensePos, setDefensePos] = useState([]);
-  console.log(match);
   if (!match) return '';
+  console.log(match);
 
+  /*
   if (matchId != match.matchId.toNumber()) {
     setMatchId(match.matchId.toNumber());
     console.log('set new matchId ', matchId);
   }
+  */
   if (defenseHashContract != match.defenseHash) {
     setDefenseHashContract(match.defenseHash);
     console.log('update defenseHashContract ', match.defenseHash);
+  }
+  if (invasionHashContract != match.invasionHash) {
+    setInvasionHashContract(match.invasionHash);
+    console.log('update invasionHashContract ', match.invasionHash);
   }
   if (round != match.round) {
     if (round != match.round - 1) {
@@ -200,25 +267,46 @@ function Match({
   function makeBytes32like(ary) {
     return '0x' + ary.map(n => n.toString(16).padStart(8, '0')).join('');
   }
+  function makeDefenseTroop(pos, type, hp, range, attack) {
+    return (pos << OFF_POSITION) + (type << OFF_TYPE) + (hp << OFF_HP) + (range << OFF_RANGE) + (attack << OFF_ATTACK);
+  }
+  // TODO invaders are ordered, not positioned
+  function makeInvasionTroop(pos, type, hp, range, attack, speed) {
+    return (pos << OFF_POSITION) + (type << OFF_TYPE) + (hp << OFF_HP) + (range << OFF_RANGE) + (attack << OFF_ATTACK) + (speed << OFF_SPEED);
+  }
   function recalcDefenseHash() {
-    const makeDefenseTroop = (pos, type, hp, range, attack) => (pos << OFF_POSITION) + (type << OFF_TYPE) + (hp << OFF_HP) + (range << OFF_RANGE) + (attack << OFF_ATTACK);
     let defense = [];
     for (let i = 0; i < defenseTypes.length; i++) {
       let typ = defenseTypes[i];
       defense.push(makeDefenseTroop(defensePos[i], typ, stats[typ].hp, stats[typ].range, stats[typ].attack));
     }
     console.log(defense);
-     console.log(  utils.keccak256("0x2A10"));
-     console.log(  utils.keccak256("0x00002A1000002A10"));
     let newHash = utils.keccak256(makeBytes32like(defense));
     console.log("defense and calc of defense", defense, newHash);
     setDefenseAry(defense);
     setDefenseHashComputed(newHash);
   }
+  function recalcInvasionHash() {
+    let invasion = [];
+    for (let i = 0; i < invasionTypes.length; i++) {
+      let typ = invasionTypes[i];
+      invasion.push(makeInvasionTroop(invasionPos[i], typ, stats[typ].hp, stats[typ].range, stats[typ].attack));
+    }
+    console.log(invasion);
+    let newHash = utils.keccak256(makeBytes32like(invasion));
+    console.log("invasion and calc of invasion", invasion, newHash);
+    setInvasionAry(invasion);
+    setInvasionHashComputed(newHash);
+  }
   function changeDefenseType(troopIdx, val) {
     const newDefenseTypes = [...defenseTypes];
     newDefenseTypes[troopIdx] = val;
     setDefenseTypes(newDefenseTypes);
+  }
+  function changeInvasionType(troopIdx, val) {
+    const newInvasionTypes = [...defenseTypes];
+    newInvasionTypes[troopIdx] = val;
+    setInvasionTypes(newInvasionTypes);
   }
   function changeDefenseSlider(troopIdx, pos) {
     // check that pos do not overlap
@@ -278,7 +366,7 @@ function Match({
       <div><span style={{color:'green'}}>{defenseHashContract == defenseHashComputed ? 'match' : ''}</span></div>
       <div>from [ {defenseAry.map(n => '0x' + n.toString(16)).join([', '])} ]</div>
 
-      {[0, 1, 2, 3, 4].map(n => { return (
+      {[0, 1, 2, 3, MAX_ARMY-1].map(n => { return (
         <Row>
           <Col span={6}>
             <Select defaultValue="1" onChange={(v) => changeDefenseType(n, v)}>
@@ -287,20 +375,10 @@ function Match({
             </Select>
           </Col>
           <Col span={12}>
-            <Slider
-              min={1}
-              max={16}
-              onChange={(pos) => changeDefenseSlider(n, pos)}
-              value={defensePos[n]}
-            />
+            <Slider min={1} max={16} onChange={(pos) => changeDefenseSlider(n, pos)} value={defensePos[n]} />
           </Col>
           <Col span={4}>
-            <InputNumber
-              min={1}
-              max={16}
-              style={{ margin: '0 16px' }}
-              value={defensePos[n]}
-            />
+            <InputNumber min={1} max={16} style={{ margin: '0 16px' }} value={defensePos[n]} />
           </Col>
         </Row>
       )})}
@@ -309,8 +387,27 @@ function Match({
           onClick={() => {
             tx(writeContracts.Convoy.commit(matchId, true, defenseHashComputed));
           }}
-        > Commit Defense Strategy to Blockchain </Button>
+        > Commit Defense Strategy (Hashed) to Blockchain </Button>
       </div>
+      <div style={{ margin: 8 }}>
+        <Button
+          onClick={() => {
+            tx(writeContracts.Convoy.reveal(matchId, true, defenseAry));
+          }}
+        > Reveal Defense Strategy </Button>
+      </div>
+
+      <h1>Invasion</h1>
+
+      {[0, 1, 2, 3, MAX_ARMY-1].map(n => { return (
+        <Row>
+          <Col span={6}>
+            <Select defaultValue={TYP_TANK} onChange={(v) => changeDefenseType(n, v)}>
+              <Option value={TYP_TANK}>Tank1</Option>
+            </Select>
+          </Col>
+        </Row>
+      )})}
     </div>
   );
 }
@@ -327,8 +424,7 @@ export default function Game({
   writeContracts,
 }) {
   const [newPurpose, setNewPurpose] = useState("loading...");
-  const matchId = 0;
-  const match = useContractReader(readContracts, "Convoy", "getMatch", [matchId]);
+  const [matchId, setMatchId] = useState(null);
 
   const _canvas = document.getElementById("myCanvas");
   const _ctx = _canvas ? _canvas.getContext("2d") : null;
@@ -338,28 +434,39 @@ export default function Game({
         ⚙️ Here is an example UI that displays and sets the purpose in your smart contract:
       */}
       <div style={{ border: "1px solid #cccccc", padding: 16, width: 800, margin: "auto", marginTop: 64 }}>
+        <h2>Game UI:</h2>
 
         <Joinables readContracts={readContracts}
+          tx={tx}
+          writeContracts={writeContracts}
+          mainnetProvider={mainnetProvider}
+        />
+        <YourActiveMatches readContracts={readContracts}
+          changeMatchId={setMatchId}
+          tx={tx}
           address={address}
+          writeContracts={writeContracts}
           mainnetProvider={mainnetProvider}
         />
         <InitMatch readContracts={readContracts}
-          address={address}
-          mainnetProvider={mainnetProvider}
-          writeContracts={writeContracts}
-        />
-        <Match
-          match={match}
           tx={tx}
-          readContracts={readContracts}
-          address={address}
           mainnetProvider={mainnetProvider}
           writeContracts={writeContracts}
         />
+    <h1> Game Match {matchId} </h1>
+        {readContracts ? 
+          <Match
+            matchId={matchId}
+            tx={tx}
+            readContracts={readContracts}
+            address={address}
+            mainnetProvider={mainnetProvider}
+            writeContracts={writeContracts}
+          />
+          : ''}
         <canvas id="myCanvas" width="480" height="320" style={{border:'1px solid black'}}></canvas>
         {_ctx ? <Board canvas={_canvas} ctx={_ctx} /> : ''}
 
-        <h2>Example UI:</h2>
         <h4>purpose: {purpose}</h4>
         <Divider />
         <div style={{ margin: 8 }}>
