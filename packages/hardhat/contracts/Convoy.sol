@@ -277,12 +277,17 @@ contract Convoy is ERC721, ERC721Enumerable {
       uint8 pos = posit(m.invasion[i]);
       while (speed > 0) {
         pos++;
-        if ((invasionMap & (1 << (pos))) != 0) {
+        if ((invasionMap & (1 << pos)) != 0) {
           pos--;
+          invasionMap |= uint16(1 << pos);
           m.invasion[i] = setPos(m.invasion[i], pos);
           break;
         }
         speed--;
+      }
+      if (speed == 0) {
+        invasionMap |= uint16(1 << pos);
+        m.invasion[i] = setPos(m.invasion[i], pos);
       }
     }
   }
