@@ -2,102 +2,29 @@ import { Row, Col, Button, Card, Collapse, DatePicker, Divider, Input, InputNumb
 import React, { useState, useEffect } from "react";
 import { utils } from "ethers";
 import { SyncOutlined } from "@ant-design/icons";
-
 import { Address, Balance, Events } from "../components";
-
-import {
-  useBalance,
-  useContractLoader,
-  useContractReader,
-  useGasPrice,
-  useOnBlock,
-  useUserProviderAndSigner,
-} from "eth-hooks";
+import { useContractReader, } from "eth-hooks";
 
 const { Option } = Select;
 const { Panel } = Collapse;
 
-function renderRound(matchState) {
-  // round is incremented, render what just happened in the prev round
-  // go through defense and invasion step by step
-  // calculate new score
-  // refresh any state maps
-}
-
-function ReadGame({
-  matchId,
-  side, // 'defender' or 'invader'
-  address,
-  mainnetProvider,
-  localProvider,
-  tx,
-  readContracts,
-  writeContracts,
-}) {
-
-  const [lastRound, setLastRound] = useState(0);
-  // read contract to get state about current game
-  // keep track of a variable from the contract in the local React state:
-  // returns multiple vars... not an object...
-  const _matchState = useContractReader(readContracts, "YourContract", "matchState", [matchId]);
-  let matchState = {};
- // matchState = convertMatchState(_matchState) // TODO
-  if (matchState && matchState.round != lastRound) {
-    // UPDATE!
-    // TODO call a callback?
-    // clean up
-    setLastRound(matchState.round);
-  }
-
-// read matches[matchId]
-  // if no address for both defender and invader then status=waiting join
-  // if round is > saved round then play out defense vs invasion for previous round
-}
-
-function InitGame({
-}) {
-  return (<div>
-      <button>Start New Game as Defender</button>
-    </div>)
-}
-function Defend({
-}) {
-  // edit/update/set defense strategy
-  // assuming you are defender
-  // sends tx to blockchain
-  // reveal
-  return (<div>
-      <h2>Defender Strategy</h2>
-      <form>
-        <label>
-          1st defender
-          <input type="text" name="def1"/>
-        </label>
-      </form>
-     </div>)
-}
 function Board({
   defenseAry,
-  defenseTypes, // XXX don't really need these
-  defensePos,
   invasionAry,
-  invasionTypes,
-  invasionPos,
   canvas,
   ctx
 }) {
-  console.log('rerendering Board');
   useEffect(() => {
     // XXX may need to keep copies because later we modify w/o new arys
     setDefense(defenseAry.map(parseDefenseTroop));
     setInvasion(invasionAry.map(parseInvasionTroop));
-    //x = canvas.width/2;
-    //y = canvas.height-30;
-    //setInterval(update, 1000);
-    update();
-  }, [defenseAry, defenseTypes, defensePos, invasionAry]);
+  }, [defenseAry, invasionAry]);
   const [defense, setDefense] = useState();
   const [invasion, setInvasion] = useState();
+  useEffect(() => {
+    setTimeout(update, 1000);
+  }, [defense, invasion]);
+
 
   const attr = (t, off) => (t >> off) & 0x07;
   function parseDefenseTroop(troop) {
@@ -110,6 +37,8 @@ function Board({
     }
   }
   function parseInvasionTroop(troop) {
+    return {'speed': attr(troop, OFF_SPEED), ...parseDefenseTroop(troop)};
+    /*
     return {
       'pos': (troop >> OFF_POSITION) & 0x1F,
       'type': attr(troop, OFF_TYPE),
@@ -118,31 +47,18 @@ function Board({
       'attack': attr(troop, OFF_ATTACK),
       'speed': attr(troop, OFF_SPEED),
     }
+    */
   }
-  /*
-let tankx = 40, tanky = 100, turr1x = 10, turr1y = 50;
-  function drawTank() {
-    ctx.fillStyle = "#889500";
-    ctx.fillRect(tankx, tanky, 20, 15);
-  }
-  function drawTurr() {
-    ctx.fillStyle = "#880080";
-    ctx.beginPath();
-    ctx.moveTo(turr1x, turr1y);
-    ctx.lineTo(turr1x+10, turr1y);
-    ctx.lineTo(turr1x+5, turr1y+5);
-    ctx.fill();
-  }
-  */
   function draw() {
+    if (defense === undefined) { console.log('wtf--------------------------'); return }
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     // defenders
     ctx.fillStyle = "#880080";
-    for (let i = 0; i < defensePos.length; i++) {
+    for (let i = 0; i < defense.length; i++) {
       ctx.beginPath();
-      ctx.moveTo(defensePos[i] * 20, 100);
-      ctx.lineTo(defensePos[i] * 20 +10, 100);
-      ctx.lineTo(defensePos[i] * 20 +5, 100+5);
+      ctx.moveTo(defense[i].pos * 20, 100);
+      ctx.lineTo(defense[i].pos * 20 +10, 100);
+      ctx.lineTo(defense[i].pos * 20 +5, 100+5);
       ctx.fill();
     }
     // invaders
@@ -156,37 +72,111 @@ let tankx = 40, tanky = 100, turr1x = 10, turr1y = 50;
   }
 
   function move() {
-    /*
-        invasionMap = 0; // throw away
-    for (uint8 i = 0; i < armySize && m.invasion[i] != 0; i++) {
-      // skip dead troops
-      if (attrib(m.invasion[i], OFF_HP) == 0) {
-        continue;
-      }
-      uint8 speed = attrib(m.invasion[i], OFF_SPEED);
-      uint8 pos = posit(m.invasion[i]);
-      while (speed > 0) {
-        pos++;
-        if ((invasionMap & (1 << (pos))) != 0) {
-          pos--;
-          m.invasion[i] = setPos(m.invasion[i], pos);
-          break;
-        }
-        speed--;
-      }
-    }
-*/
 //    Bitwise operators treat their operands as a set of 32 bits (zeros and ones) and return standard JavaScript numerical values.
-    // move invaders - assume they are in order otherwise could break
-    // TODO check if we need to reverse the order - default like 15 14 13 12 11..
+    // make map and reverse
+    let defenseMap = 0;
     let invasionMap = 0;
+    let defenseReverse = {};
+    let invasionReverse = {};
+    let defendersSurvived = 0;
+    let invadersSurvived = 0;
+    let defenseDamage = {};
+    let invasionDamage = {};
+    defense.forEach((troop, i) => {
+      if (troop.hp == 0) { return } // maybe unnecessary check dead
+      defendersSurvived++;
+      defenseMap |= (1 << troop.pos);
+      defenseReverse[troop.pos] = i;
+      defenseDamage[i] = 0;
+    })
+    invasion.forEach((troop, i) => {
+      if (troop.hp == 0) { return } // maybe unnecessary check dead
+      invadersSurvived++;
+      invasionMap |= (1 << troop.pos);
+      invasionReverse[troop.pos] = i;
+      invasionDamage[i] = 0;
+    })
+
+    let defendersDestroyed = 0;
     for (let i = 0; i < invasion.length; i++) {
       let troop = invasion[i];
-      console.log('troop before: ', troop);
+      if (troop.hp == 0) { continue } // maybe unnecessary check dead
+      let pos = troop.pos;
+      let min = pos - troop.range;
+      for (pos = pos + troop.range; pos >= min; pos--) {
+        // starts big, most advanced troops
+        if ((defenseMap & (1 << pos)) != 0) {
+          // hit
+          let idx = defenseReverse[pos];
+          let target = defense[defenseReverse[pos]];
+          defenseDamage[idx] += troop.attack;
+          if (target.hp - defenseDamage[idx] <= 0) {
+            defenseMap -= 1 << pos;
+            defendersDestroyed++;
+            defendersSurvived--;
+          }
+          break;
+        }
+      }
+    }
+
+
+    let invadersDestroyed = 0;
+    for (let i = 0; i < defense.length; i++) {
+      let troop = defense[i];
       // skip dead
       if (troop.hp == 0) {
         continue;
       }
+      let pos = troop.pos;
+      let min = pos - troop.range;
+      for (pos = pos + troop.range; pos >= min; pos--) {
+        // starts big, most advanced troops
+        if ((invasionMap & (1 << pos)) != 0) {
+          // hit
+          let idx = invasionReverse[pos];
+          let target = invasion[invasionReverse[pos]];
+          invasionDamage[idx] += troop.attack;
+          if (target.hp - invasionDamage[idx] <= 0) {
+            invasionMap -= 1 << pos;
+            invadersDestroyed++;
+            invadersSurvived--;
+          }
+          break;
+        }
+      }
+    }
+
+
+    // TODO draw attack then move and re-draw
+
+
+    // update damaged defenders
+    let newDefense = [];
+    for (let i = 0; i < defense.length; i++) {
+      let troop = defense[i];
+      let newTroop = {...troop};
+      newTroop.hp -= defenseDamage[i];
+      // skip dead
+      if (newTroop.hp <= 0) {
+        continue;
+      }
+      newDefense.push(newTroop);
+    }
+
+    // move invaders - assume they are in order otherwise could break
+    // TODO check if we need to reverse the order - default like 15 14 13 12 11..
+    invasionMap = 0;
+    let newInvasion = [];
+    for (let i = 0; i < invasion.length; i++) {
+      let troop = invasion[i];
+      let newTroop = {...troop};
+      newTroop.hp -= invasionDamage[i];
+      // skip dead
+      if (newTroop.hp <= 0) {
+        continue;
+      }
+      // if (troop.hp == 0) { continue; }
       let pos = troop.pos;
       for (let speed = troop.speed; speed > 0; speed--) {
         pos++;
@@ -196,21 +186,25 @@ let tankx = 40, tanky = 100, turr1x = 10, turr1y = 50;
         }
       }
       invasionMap |= (1 << pos);
-      troop.pos = pos; // make sure this is where to update
-      console.log('troop after: ', troop);
+      // troop.pos = pos; // make sure this is where to update
+      newTroop.pos = pos;
+      newInvasion.push(newTroop);
     }
-    console.log('invasionMap: ', invasionMap);
+
+    
+    setDefense(newDefense);
+    setInvasion(newInvasion);
+
+    
     draw();
-    //
-    // attack
   }
 
   return (
     <div>
       <div>from [ {defenseAry.map(n => '0x' + n.toString(16)).join([', '])} ]</div>
-      <div>defense positions [ {defensePos.join([', '])} ]</div>
-      <div>defense [ {!defense ? '...' : defense.map(troop => JSON.stringify(troop)).join([', '])} ]</div>
-      <div>invasion positions [ {invasionPos.join([', '])} ]</div>
+      <div>defense [ {!defense ? '...' : defense.map(troop => JSON.stringify(troop)).join([', ']).replaceAll('"', '')} ]</div>
+      <div>invasion [ {!invasion ? '...' : invasion.map(troop => JSON.stringify(troop)).join([', ']).replaceAll('"', '')} ]</div>
+      <div>invasion [ {invasionAry.map(n => '0x' + n.toString(16)).join([', '])} ]</div>
       <div>
         <Button onClick={move} >Make Move 1x</Button>
       </div>
@@ -314,6 +308,8 @@ const invStats = {};
 invStats[TYP_TANK] = { 'hp': 2, 'range': 1, 'attack': 2, 'speed': 1 };
 invStats[TYP_BUS] = { 'hp': 1, 'range': 1, 'attack': 1, 'speed': 2 };
 // const typeMap = {'Javelin': 0x01, 'RPG': 0x02};
+
+
 function Match({
   matchId,
   address,
@@ -536,11 +532,7 @@ function Match({
             mode='plan'
             canvas={_canvasPlan} ctx={_ctxPlan}
             defenseAry={defenseAry}
-            defenseTypes={defenseTypes}
-            defensePos={defensePos}
             invasionAry={invasionAry}
-            invasionTypes={invasionTypes}
-            invasionPos={invasionPos}
           />
         ): ''}
         <h1>Play</h1>
@@ -549,11 +541,7 @@ function Match({
             mode='play'
             canvas={_canvasPlay} ctx={_ctxPlay}
             defenseAry={defenseAry}
-            defenseTypes={defenseTypes}
-            defensePos={defensePos}
             invasionAry={invasionAry}
-            invasionTypes={invasionTypes}
-            invasionPos={invasionPos}
           />
         ): ''}
       </div>
