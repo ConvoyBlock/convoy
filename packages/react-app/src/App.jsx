@@ -256,6 +256,7 @@ function App(props) {
         logoutOfWeb3Modal={logoutOfWeb3Modal}
         USE_NETWORK_SELECTOR={USE_NETWORK_SELECTOR}
       />
+    {/*
       <Menu style={{ textAlign: "center", marginTop: 40 }} selectedKeys={[location.pathname]} mode="horizontal">
         <Menu.Item key="/">
           <Link to="/">App Home</Link>
@@ -279,6 +280,7 @@ function App(props) {
           <Link to="/subgraph">Subgraph</Link>
         </Menu.Item>
       </Menu>
+      */}
 
       <Switch>
         <Route exact path="/">
@@ -412,7 +414,7 @@ function App(props) {
       </div>
 
       {/* 🗺 Extra UI like gas price, eth price, faucet, and support: */}
-      <div style={{ position: "fixed", textAlign: "left", left: 0, bottom: 20, padding: 10 }}>
+      <div style={{ display: 'none', position: "fixed", textAlign: "left", left: 0, bottom: 20, padding: 10 }}>
         <Row align="middle" gutter={[4, 4]}>
           <Col span={8}>
             <Ramp price={price} address={address} networks={NETWORKS} />
@@ -441,11 +443,13 @@ function App(props) {
           <Col span={24}>
             {
               /*  if the local provider has a signer, let's show the faucet:  */
+              /*
               faucetAvailable ? (
                 <Faucet localProvider={localProvider} price={price} ensProvider={mainnetProvider} />
               ) : (
                 ""
               )
+              */
             }
           </Col>
         </Row>
