@@ -145,6 +145,13 @@ module.exports = {
         mnemonic: mnemonic(),
       },
     },
+    mumbaiInfura: {
+      url: `https://polygon-mumbai.infura.io/v3/${process.env.MUMBAI_INFURA_KEY}`,
+      gasPrice: 1000000000, // may need to bump to 30?
+      accounts: {
+        mnemonic: mnemonic(),
+      },
+    },
     matic: {
       url: "https://rpc-mainnet.maticvigil.com/",
       gasPrice: 1000000000,
