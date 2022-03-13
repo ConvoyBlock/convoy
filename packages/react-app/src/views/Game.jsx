@@ -5,8 +5,15 @@ import { SyncOutlined } from "@ant-design/icons";
 import { Address, Balance, Events } from "../components";
 import { useContractReader, } from "eth-hooks";
 
+import missile from '../spr_missile.png';
+import redtank from '../redtank.png';
+import tank from '../tank.png';
+import sniper from '../sniper.png';
+import dacia from '../dacia_Verde.jpg';
+
 const { Option } = Select;
 const { Panel } = Collapse;
+
 
 function Board({
   defenseAry,
@@ -201,6 +208,14 @@ function Board({
 
   return (
     <div>
+      <div style={{position:'relative', width:720, height:200, border:'1px solid black'}}>
+        {!defense ? '' : defense.map((troop, i) => (
+          <img key={'dimg-'+i} src={troop.type == TYP_JAV ? missile : sniper} width={20} style={{position:'absolute', top:80, left: troop.pos*20}} />
+        ))}
+        {!invasion ? '' : invasion.map((troop, i) => (
+          <img key={'invmg-'+i} src={troop.type == TYP_TANK ? tank : dacia} width={20} style={{position:'absolute', top:100, left: troop.pos*20}} />
+        ))}
+      </div>
       <div>from [ {defenseAry.map(n => '0x' + n.toString(16)).join([', '])} ]</div>
       <div>defense [ {!defense ? '...' : defense.map(troop => JSON.stringify(troop)).join([', ']).replaceAll('"', '')} ]</div>
       <div>invasion [ {!invasion ? '...' : invasion.map(troop => JSON.stringify(troop)).join([', ']).replaceAll('"', '')} ]</div>
@@ -298,12 +313,14 @@ const OFF_RANGE = 7;
 const OFF_ATTACK = 4;
 const OFF_SPEED = 1;
 const TYP_JAV = 1;
-const TYP_RPG = 2;
+const TYP_SNIPER = 2;
 const TYP_TANK = 3;
 const TYP_BUS = 4;
-const jav = {'hp': 2, 'range': 2, 'attack': 1};
-const defStats = {2: {/* TODO */}};
-defStats[TYP_JAV] = jav;
+const _jav = {'hp': 2, 'range': 2, 'attack': 2};
+const _sniper = {'hp': 1, 'range': 2, 'attack': 1};
+const defStats = {};
+defStats[TYP_JAV] = _jav;
+defStats[TYP_SNIPER] = _sniper;
 const invStats = {};
 invStats[TYP_TANK] = { 'hp': 2, 'range': 1, 'attack': 2, 'speed': 1 };
 invStats[TYP_BUS] = { 'hp': 1, 'range': 1, 'attack': 1, 'speed': 2 };
@@ -341,7 +358,7 @@ function Match({
   const [invasionHashContract, setInvasionHashContract] = useState();
   const [invasionHashComputed, setInvasionHashComputed] = useState();
   const [invasionTypes, setInvasionTypes] = useState(Array(MAX_ARMY).fill(TYP_TANK));
-  const [invasionPos, setInvasionPos] = useState([0x0F, 0x0E, 0x0D, 0x0C, 0x0B]);
+  const [invasionPos, setInvasionPos] = useState([0x0B, 0x0A, 0x08, 0x07, 0x06]);
   const [round, setRound] = useState(0);
   const _canvasPlan = document.getElementById("planCanvas");
   const _canvasPlay = document.getElementById("playCanvas");
@@ -385,6 +402,7 @@ function Match({
   }
   function recalcDefenseHash() {
     let defense = [];
+    console.log(defenseTypes);
     for (let i = 0; i < defenseTypes.length; i++) {
       let typ = defenseTypes[i];
       defense.push(makeDefenseTroop(defensePos[i], typ, defStats[typ].hp, defStats[typ].range, defStats[typ].attack));
@@ -414,9 +432,10 @@ function Match({
     recalcDefenseHash();
   }
   function changeInvasionType(troopIdx, val) {
-    const newInvasionTypes = [...defenseTypes];
+    const newInvasionTypes = [...invasionTypes];
     newInvasionTypes[troopIdx] = val;
     setInvasionTypes(newInvasionTypes);
+    recalcInvasionHash();
   }
   function changeDefenseSlider(troopIdx, pos) {
     // check that pos do not overlap
@@ -479,9 +498,9 @@ function Match({
       {[0, 1, 2, 3, MAX_ARMY-1].map(n => { return (
         <Row key={'defender-' + n}>
           <Col span={6}>
-            <Select defaultValue="1" onChange={(v) => changeDefenseType(n, v)}>
-              <Option value="1">Javelin</Option>
-              <Option value="2">RPG TODO</Option>
+            <Select defaultValue={TYP_JAV} onChange={(v) => changeDefenseType(n, v)}>
+              <Option value={TYP_JAV}>Javelin</Option>
+              <Option value={TYP_SNIPER}>Sniper</Option>
             </Select>
           </Col>
           <Col span={12}>
@@ -507,12 +526,35 @@ function Match({
         > Reveal Defense Strategy </Button>
       </div>
 
+      <div>
+        <h1>Road of Death</h1>
+        <canvas id="planCanvas" width="720" height="200" style={{display:'none', border:'1px solid black'}}></canvas>
+        {_ctxPlan ? (<Board
+            mode='plan'
+            canvas={_canvasPlan} ctx={_ctxPlan}
+            defenseAry={defenseAry}
+            invasionAry={invasionAry}
+          />
+        ): ''}
+        <div style={{display:'none'}}>
+        <h1>Play</h1>
+        <canvas id="playCanvas" width="720" height="200" style={{border:'1px solid black'}}></canvas>
+        {_ctxPlan ? (<Board
+            mode='play'
+            canvas={_canvasPlay} ctx={_ctxPlay}
+            defenseAry={defenseAry}
+            invasionAry={invasionAry}
+          />
+        ): ''}
+        </div>
+      </div>
       <h1>Invasion</h1>
 
       <Row >
       {[0, 1, 2, 3, MAX_ARMY-1].map(n => { return (
         <Col key={'invader-' + n} span={4}>
-          <Select defaultValue={TYP_TANK} onChange={(v) => changeDefenseType(n, v)}>
+          #{n}
+          <Select defaultValue={TYP_TANK} onChange={(v) => changeInvasionType(n, v)}>
             <Option value={TYP_TANK}>Tank</Option>
             <Option value={TYP_BUS}>Personnel Carrier</Option>
           </Select>
@@ -524,27 +566,21 @@ function Match({
       <div>invader hash strat computed: {invasionHashComputed == 0 ? '...' : invasionHashComputed}</div>
       <div><span style={{color:'green'}}>{invasionHashContract == invasionHashComputed ? 'match' : ''}</span></div>
       <div>from [ {invasionAry.map(n => '0x' + n.toString(16)).join([', '])} ]</div>
-
-      <div>
-        <h1>Plan</h1>
-        <canvas id="planCanvas" width="720" height="200" style={{border:'1px solid black'}}></canvas>
-        {_ctxPlan ? (<Board
-            mode='plan'
-            canvas={_canvasPlan} ctx={_ctxPlan}
-            defenseAry={defenseAry}
-            invasionAry={invasionAry}
-          />
-        ): ''}
-        <h1>Play</h1>
-        <canvas id="playCanvas" width="720" height="200" style={{border:'1px solid black'}}></canvas>
-        {_ctxPlan ? (<Board
-            mode='play'
-            canvas={_canvasPlay} ctx={_ctxPlay}
-            defenseAry={defenseAry}
-            invasionAry={invasionAry}
-          />
-        ): ''}
+      <div style={{ margin: 8 }}>
+        <Button type='primary'
+          onClick={() => {
+            tx(writeContracts.Convoy.commit(matchId, false, invasionHashComputed));
+          }}
+        > Commit Invasion Strategy (Hashed) to Blockchain </Button>
       </div>
+      <div style={{ margin: 8 }}>
+        <Button type='primary'
+          onClick={() => {
+            tx(writeContracts.Convoy.reveal(matchId, false, invasionAry));
+          }}
+        > Reveal Invasion Strategy </Button>
+      </div>
+
     </div>
   );
 }
@@ -566,7 +602,7 @@ export default function Game({
         ⚙️ Here is an example UI that displays and sets the purpose in your smart contract:
       */}
       <div style={{ border: "1px solid #cccccc", padding: 16, width: 800, margin: "auto", marginTop: 64 }}>
-        <h2>Convoy Game UI:</h2>
+        <h2>Convoy Block</h2>
 
         <InitMatch readContracts={readContracts}
           tx={tx}
