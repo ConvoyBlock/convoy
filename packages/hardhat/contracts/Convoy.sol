@@ -175,6 +175,9 @@ contract Convoy is ERC721, ERC721Enumerable {
     // TODO compute and check hash matches, can't just let opponent take responsibility
     // XXX not optional because we will clear hash w/o dispute step
 
+    finishRound(matchId);
+  }
+  function finishRound(uint256 matchId) public {
     if (matches[matchId].defenderRevealed && matches[matchId].invaderRevealed) {
       // Both revealed! game on!
       // rollRound(......);
@@ -182,6 +185,7 @@ contract Convoy is ERC721, ERC721Enumerable {
       // but then we need to save state to allow a confirm/dispute step
       // so we must validate here in the contract
 
+      // TODO loop a few times, note that armies get modified in place
       evalRound(matchId);
       _roundUp(matchId);
     }
@@ -238,6 +242,9 @@ contract Convoy is ERC721, ERC721Enumerable {
     for (uint8 i = 0; i < armySize && m.defense[i] != 0; i++) {
       uint8 range = attrib(m.defense[i], OFF_RANGE) - 1; // range=1 can attack only directly up/down, so --
       uint8 pos = posit(m.defense[i]);
+      if (pos == 0) {
+        continue;
+      }
       uint8 min = pos - range;
       for (pos = pos + range; pos >= min; pos--) {
         // starts big, most advanced troops
