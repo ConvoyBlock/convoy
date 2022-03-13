@@ -77,16 +77,50 @@ function Defend({
      </div>)
 }
 function Board({
+  defenseAry,
+  defenseTypes, // XXX don't really need these
+  defensePos,
+  invasionAry,
+  invasionTypes,
+  invasionPos,
   canvas,
   ctx
 }) {
   console.log('rerendering Board');
   useEffect(() => {
+    // XXX may need to keep copies because later we modify w/o new arys
+    setDefense(defenseAry.map(parseDefenseTroop));
+    setInvasion(invasionAry.map(parseInvasionTroop));
     //x = canvas.width/2;
     //y = canvas.height-30;
-    //setInterval(update, 100);
-  }, []);
-let tankx = 0, tanky = 0, turr1x = 0, turr1y = 0;
+    //setInterval(update, 1000);
+    update();
+  }, [defenseAry, defenseTypes, defensePos, invasionAry]);
+  const [defense, setDefense] = useState();
+  const [invasion, setInvasion] = useState();
+
+  const attr = (t, off) => (t >> off) & 0x07;
+  function parseDefenseTroop(troop) {
+    return {
+      'pos': (troop >> OFF_POSITION) & 0x1F,
+      'type': attr(troop, OFF_TYPE),
+      'hp': attr(troop, OFF_HP),
+      'range': attr(troop, OFF_RANGE),
+      'attack': attr(troop, OFF_ATTACK),
+    }
+  }
+  function parseInvasionTroop(troop) {
+    return {
+      'pos': (troop >> OFF_POSITION) & 0x1F,
+      'type': attr(troop, OFF_TYPE),
+      'hp': attr(troop, OFF_HP),
+      'range': attr(troop, OFF_RANGE),
+      'attack': attr(troop, OFF_ATTACK),
+      'speed': attr(troop, OFF_SPEED),
+    }
+  }
+  /*
+let tankx = 40, tanky = 100, turr1x = 10, turr1y = 50;
   function drawTank() {
     ctx.fillStyle = "#889500";
     ctx.fillRect(tankx, tanky, 20, 15);
@@ -99,18 +133,87 @@ let tankx = 0, tanky = 0, turr1x = 0, turr1y = 0;
     ctx.lineTo(turr1x+5, turr1y+5);
     ctx.fill();
   }
+  */
   function draw() {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
-    //drawTank();
-    //drawTurr();
+    // defenders
+    ctx.fillStyle = "#880080";
+    for (let i = 0; i < defensePos.length; i++) {
+      ctx.beginPath();
+      ctx.moveTo(defensePos[i] * 20, 100);
+      ctx.lineTo(defensePos[i] * 20 +10, 100);
+      ctx.lineTo(defensePos[i] * 20 +5, 100+5);
+      ctx.fill();
+    }
+    // invaders
+    ctx.fillStyle = "#889500";
+    for (let i = 0; i < invasion.length; i++) {
+      ctx.fillRect(invasion[i].pos * 20, 120, 10, 10);
+    }
   }
   function update() {
     draw();
   }
 
+  function move() {
+    /*
+        invasionMap = 0; // throw away
+    for (uint8 i = 0; i < armySize && m.invasion[i] != 0; i++) {
+      // skip dead troops
+      if (attrib(m.invasion[i], OFF_HP) == 0) {
+        continue;
+      }
+      uint8 speed = attrib(m.invasion[i], OFF_SPEED);
+      uint8 pos = posit(m.invasion[i]);
+      while (speed > 0) {
+        pos++;
+        if ((invasionMap & (1 << (pos))) != 0) {
+          pos--;
+          m.invasion[i] = setPos(m.invasion[i], pos);
+          break;
+        }
+        speed--;
+      }
+    }
+*/
+//    Bitwise operators treat their operands as a set of 32 bits (zeros and ones) and return standard JavaScript numerical values.
+    // move invaders - assume they are in order otherwise could break
+    // TODO check if we need to reverse the order - default like 15 14 13 12 11..
+    let invasionMap = 0;
+    for (let i = 0; i < invasion.length; i++) {
+      let troop = invasion[i];
+      console.log('troop before: ', troop);
+      // skip dead
+      if (troop.hp == 0) {
+        continue;
+      }
+      let pos = troop.pos;
+      for (let speed = troop.speed; speed > 0; speed--) {
+        pos++;
+        if ((invasionMap & (1 << pos)) != 0) {
+          pos--;
+          break;
+        }
+      }
+      invasionMap |= (1 << pos);
+      troop.pos = pos; // make sure this is where to update
+      console.log('troop after: ', troop);
+    }
+    console.log('invasionMap: ', invasionMap);
+    draw();
+    //
+    // attack
+  }
+
   return (
     <div>
-    Score
+      <div>from [ {defenseAry.map(n => '0x' + n.toString(16)).join([', '])} ]</div>
+      <div>defense positions [ {defensePos.join([', '])} ]</div>
+      <div>defense [ {!defense ? '...' : defense.map(troop => JSON.stringify(troop)).join([', '])} ]</div>
+      <div>invasion positions [ {invasionPos.join([', '])} ]</div>
+      <div>
+        <Button onClick={move} >Make Move 1x</Button>
+      </div>
     </div>
   );
 }
@@ -208,8 +311,8 @@ const jav = {'hp': 2, 'range': 2, 'attack': 1};
 const defStats = {2: {/* TODO */}};
 defStats[TYP_JAV] = jav;
 const invStats = {};
-invStats[TYP_TANK] = { 'hp': 2, 'range': 1, 'attack': 2 };
-invStats[TYP_BUS] = { 'hp': 1, 'range': 1, 'attack': 1 };
+invStats[TYP_TANK] = { 'hp': 2, 'range': 1, 'attack': 2, 'speed': 1 };
+invStats[TYP_BUS] = { 'hp': 1, 'range': 1, 'attack': 1, 'speed': 2 };
 // const typeMap = {'Javelin': 0x01, 'RPG': 0x02};
 function Match({
   matchId,
@@ -244,6 +347,10 @@ function Match({
   const [invasionTypes, setInvasionTypes] = useState(Array(MAX_ARMY).fill(TYP_TANK));
   const [invasionPos, setInvasionPos] = useState([0x0F, 0x0E, 0x0D, 0x0C, 0x0B]);
   const [round, setRound] = useState(0);
+  const _canvasPlan = document.getElementById("planCanvas");
+  const _canvasPlay = document.getElementById("playCanvas");
+  const _ctxPlan = _canvasPlan ? _canvasPlan.getContext("2d") : null;
+  const _ctxPlay = _canvasPlay ? _canvasPlay.getContext("2d") : null;
   if (!match) return '';
   console.log(match);
 
@@ -296,7 +403,7 @@ function Match({
     let invasion = [];
     for (let i = 0; i < invasionTypes.length; i++) {
       let typ = invasionTypes[i];
-      invasion.push(makeInvasionTroop(invasionPos[i], typ, invStats[typ].hp, invStats[typ].range, invStats[typ].attack));
+      invasion.push(makeInvasionTroop(invasionPos[i], typ, invStats[typ].hp, invStats[typ].range, invStats[typ].attack, invStats[typ].speed));
     }
     console.log(invasion);
     let newHash = utils.keccak256(makeBytes32like(invasion));
@@ -421,26 +528,50 @@ function Match({
       <div>invader hash strat computed: {invasionHashComputed == 0 ? '...' : invasionHashComputed}</div>
       <div><span style={{color:'green'}}>{invasionHashContract == invasionHashComputed ? 'match' : ''}</span></div>
       <div>from [ {invasionAry.map(n => '0x' + n.toString(16)).join([', '])} ]</div>
+
+      <div>
+        <h1>Plan</h1>
+        <canvas id="planCanvas" width="720" height="200" style={{border:'1px solid black'}}></canvas>
+        {_ctxPlan ? (<Board
+            mode='plan'
+            canvas={_canvasPlan} ctx={_ctxPlan}
+            defenseAry={defenseAry}
+            defenseTypes={defenseTypes}
+            defensePos={defensePos}
+            invasionAry={invasionAry}
+            invasionTypes={invasionTypes}
+            invasionPos={invasionPos}
+          />
+        ): ''}
+        <h1>Play</h1>
+        <canvas id="playCanvas" width="720" height="200" style={{border:'1px solid black'}}></canvas>
+        {_ctxPlan ? (<Board
+            mode='play'
+            canvas={_canvasPlay} ctx={_ctxPlay}
+            defenseAry={defenseAry}
+            defenseTypes={defenseTypes}
+            defensePos={defensePos}
+            invasionAry={invasionAry}
+            invasionTypes={invasionTypes}
+            invasionPos={invasionPos}
+          />
+        ): ''}
+      </div>
     </div>
   );
 }
 
 export default function Game({
-  purpose,
   address,
   mainnetProvider,
   localProvider,
   yourLocalBalance,
-  price,
   tx,
   readContracts,
   writeContracts,
 }) {
-  const [newPurpose, setNewPurpose] = useState("loading...");
   const [matchId, setMatchId] = useState(null);
 
-  const _canvas = document.getElementById("myCanvas");
-  const _ctx = _canvas ? _canvas.getContext("2d") : null;
   return (
     <div>
       {/*
@@ -454,7 +585,7 @@ export default function Game({
           mainnetProvider={mainnetProvider}
           writeContracts={writeContracts}
         />
-        <Collapse defaultActiveKey={['1']} >
+        <Collapse defaultActiveKey={['2']} >
           <Panel header="Joinable Matches" key="1">
             <Joinables readContracts={readContracts}
               tx={tx}
@@ -463,7 +594,7 @@ export default function Game({
             />
           </Panel>
         </Collapse>
-        <Collapse defaultActiveKey={['1']} >
+        <Collapse defaultActiveKey={['2']} >
           <Panel header="Your Matches" key="2">
             <YourActiveMatches readContracts={readContracts}
               changeMatchId={setMatchId}
@@ -486,8 +617,6 @@ export default function Game({
             writeContracts={writeContracts}
           />
           : ''}
-        <canvas id="myCanvas" width="480" height="320" style={{border:'1px solid black'}}></canvas>
-        {_ctx ? <Board canvas={_canvas} ctx={_ctx} /> : ''}
 
       </div>
 
